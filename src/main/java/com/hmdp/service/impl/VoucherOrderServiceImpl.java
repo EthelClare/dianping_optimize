@@ -65,7 +65,18 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
      */
     @PostConstruct
     private void init() {
+        createConsumerGroup();
         SECKILL_ORDER_EXECUTOR.submit(new VoucherOrderHandler());
+    }
+    private void createConsumerGroup() {
+        try {
+            // 尝试创建消费者组，如果已存在会抛出异常，我们捕获并忽略
+            stringRedisTemplate.opsForStream().createGroup("stream.orders", ReadOffset.latest(), "g1");
+            log.info("创建消费者组 g1 成功");
+        } catch (Exception e) {
+            // 消费者组可能已存在，忽略这个错误
+            log.info("消费者组 g1 可能已存在: {}", e.getMessage());
+        }
     }
 
 
