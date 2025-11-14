@@ -1,33 +1,35 @@
--- redis.call("命令名称", 参数1， 参数2...） 这是通过lua脚本调用redis的方法
 -- 1.参数列表
--- 1.1.优惠券id
 local voucherId = ARGV[1]
--- 1.2.用户id
 local userId = ARGV[2]
--- 1.3.订单id
 local orderId = ARGV[3]
+local timestamp = ARGV[4]
 
 -- 2.数据key
--- 2.1.库存key
 local stockKey = 'seckill:stock:' .. voucherId
--- 2.2.订单key
 local orderKey = 'seckill:order:' .. voucherId
 
 -- 3.脚本业务
--- 3.1.判断库存是否充足 get stockKey
-if(tonumber(redis.call('get', stockKey)) <= 0) then
-    -- 3.2.库存不足，返回1
-    return 1
+-- 3.1.判断库存是否充足
+local stock = redis.call('get', stockKey)
+if not stock or tonumber(stock) <= 0 then
+    return {1, '库存不足'}
 end
--- 3.2.判断用户是否下单 SISMEMBER orderKey userId
-if(redis.call('sismember', orderKey, userId) == 1) then
-    -- 3.3.存在，说明是重复下单，返回2
-    return 2
+
+-- 3.2.判断用户是否重复下单
+if redis.call('sismember', orderKey, userId) == 1 then
+    return {2, '您已购买过此优惠券'}
 end
--- 3.4.扣库存 incrby stockKey -1
-redis.call('incrby', stockKey, -1)
--- 3.5.下单（保存用户）sadd orderKey userId
+
+-- 3.3.扣库存
+redis.call('decr', stockKey)
+
+-- 3.4.记录用户下单
 redis.call('sadd', orderKey, userId)
--- 3.6.发送消息到队列中， XADD stream.orders * k1 v1 k2 v2 ...
-redis.call('xadd', 'stream.orders', '*', 'userId', userId, 'voucherId', voucherId, 'id', orderId)
-return 0
+
+-- 3.5.生成事件ID（修复随机数）
+-- 在Redis Lua中需要先设置随机种子
+math.randomseed(tonumber(timestamp))
+local randomNum = math.random(1000, 9999)
+local eventId = 'seckill:' .. userId .. ':' .. timestamp .. ':' .. randomNum
+
+return {0, eventId}
